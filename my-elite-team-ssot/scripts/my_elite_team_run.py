@@ -22,13 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Import local adapter
-try:
-    import aoi_council_orchestrator_pro_adapter as pro_adapter
-except ImportError:
-    # If running from root, add scripts to path
-    sys.path.append(os.path.join(os.path.dirname(__file__)))
-    import aoi_council_orchestrator_pro_adapter as pro_adapter
+
 
 # --- Constants ---
 VERSION = "0.1.8"
@@ -36,7 +30,7 @@ PROOF_PACK_SCHEMA_VERSION = "0.1"
 DEFAULT_MODEL = "gemini-flash"  # placeholder; actual agent routing lives in Orchestrator Pro
 
 # Policy engine v0.2 (externalized config)
-POLICY_ENGINE_CONFIG_PATH = Path(__file__).resolve().parents[1] / "context" / "AOI_COUNCIL_POLICY_ENGINE_CONFIG_V0_1.json"
+POLICY_ENGINE_CONFIG_PATH = Path("/root/.openclaw/workspace/my_elite_team_simulation/my-elite-team-orchestrator/my-elite-core/state/acp_automation_policy_v0_1.json")
 
 # Baseline defaults (kept for hardening + fallback)
 DEFAULT_POLICY_RULES = {
@@ -103,25 +97,37 @@ ROSTER_LITE = [
     {"id": "comms", "label": "📢 Comms", "role": "Messaging & Community Reaction"},
 ]
 
+# --- Pro Roster Definition (from adapter) ---
+ROSTER_PRO = [
+    {"id": "oracle", "label": "🧿 Oracle", "role": "Decision Frame / Veto Gate", "agent_id": "blue-oracle"},
+    {"id": "strategy", "label": "🧠 Strategy", "role": "Scoring & Trade-offs", "agent_id": "blue-brain"},
+    {"id": "security", "label": "⚔️ Security", "role": "Security / Compliance", "agent_id": "blue-blade"},
+    {"id": "builder", "label": "⚡ Builder", "role": "Feasibility / Implementation", "agent_id": "blue-flash"},
+    {"id": "comms", "label": "📢 Comms", "role": "Messaging / Community", "agent_id": "blue-sound"},
+    {"id": "research", "label": "👁️ Research", "role": "Evidence Gathering / External Signals", "agent_id": "blue-eye"},
+    {"id": "record", "label": "🗂️ Record", "role": "SSOT Logging / Proof Bundling", "agent_id": "blue-record"},
+    {"id": "ops", "label": "⚙️ Ops", "role": "Reliability / Observability", "agent_id": "blue-gear"},
+    {"id": "risk", "label": "💊 Risk", "role": "Devil's Advocate / Circuit Breaker", "agent_id": "blue-med"},
+    {"id": "product", "label": "🧩 Product", "role": "UX / Productization", "agent_id": "blue-product"},
+    {"id": "quality", "label": "🧼 Quality", "role": "QA / Edge Cases", "agent_id": "blue-clean"},
+]
+
+def get_pro_roster() -> List[Dict[str, str]]:
+    """Return the 11-role roster definition."""
+    return ROSTER_PRO
+
+def invoke_pro_agent(agent_id: str, prompt: str, context: Dict[str, Any]) -> str:
+    """Invoke a specific agent. Placeholder implementation from adapter."""
+    # This is a simplified stub. A real implementation would involve API calls.
+    time.sleep(0.5)
+    return f"[{agent_id.upper()}] (Pro Mode) acknowledged task: '{prompt[:30]}...'"
+
 
 def get_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def detect_orchestrator_mode(requested_pro: bool) -> str:
-    """
-    Determine if we run in PRO or LITE mode.
-    - request_pro=False -> lite
-    - request_pro=True -> adapter probe then pro/lite fallback
-    """
-    if not requested_pro:
-        return "lite"
 
-    if pro_adapter.is_pro_available():
-        return "pro"
-
-    print("⚠️  [System] Orchestrator Pro not detected/enabled. Falling back to Lite mode.")
-    return "lite"
 
 
 def _slug(s: str) -> str:
@@ -397,7 +403,7 @@ def _invoke_agent(role: Dict[str, str], topic: str, mode: str, context: Optional
     if mode == "pro":
         agent_id = role.get("agent_id", "unknown")
         ctx = {"mode": mode, "context": context}
-        return pro_adapter.invoke_pro_agent(agent_id, topic, ctx)
+        return invoke_pro_agent(agent_id, topic, ctx)
     return mock_agent_response(role, topic)
 
 
@@ -540,10 +546,14 @@ def _merge_role_position(base_output: str, position: Dict[str, Any], topic: str,
     base = base_output.strip()
     if not base:
         base = "Placeholder opinion recorded."
+    
+    note = position.get("note", "")
     context_tag = (context or "").strip()[:50]
+    
     if context_tag:
-        return f"{base} | {position.get("note", "")} (context: {context_tag})."
-    return f"{base} | {position.get("note", "")}"
+        return f"{base} | {note} (context: {context_tag})."
+    else:
+        return f"{base} | {note}"
 
 
 def _synthesize_passes(roles: List[Dict[str, Any]], topic: str, context: Optional[str], mode: str) -> Dict[str, Any]:
@@ -1652,7 +1662,7 @@ def main() -> None:
 
     # 1) Init manifest
     run_id = f"council_{int(time.time())}_{_slug(args.topic)}"
-    executor_mode = detect_orchestrator_mode(args.pro)
+    executor_mode = "pro"
 
     manifest: Dict[str, Any] = {
         "run_id": run_id,
@@ -1688,7 +1698,7 @@ def main() -> None:
 
     # 2) Select roster
     if executor_mode == "pro":
-        full_roster = pro_adapter.get_pro_roster()
+        full_roster = get_pro_roster()
         roster = _select_smart_roster(full_roster, args.topic, args.context)
         manifest["roster"] = {
             "selected": [r.get("id") for r in roster],
