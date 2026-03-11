@@ -1,0 +1,10 @@
+{
+  "name": "aoi-squad-pro",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "aoi-squad-pro": "./skill.js"
+  },
+  "dependencies": {}
+}

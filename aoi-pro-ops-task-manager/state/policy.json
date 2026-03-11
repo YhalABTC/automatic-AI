@@ -1,0 +1,41 @@
+{
+  "version": "0.1",
+  "scope": {
+    "folders": ["ops/items"],
+    "autoEditAllowed": true
+  },
+  "rules": {
+    "waveExecution": {
+      "maxActive": 5,
+      "policyDoc": "context/AOI_PRO_WAVE_EXECUTION_POLICY_V0_1.md"
+    },
+    "canonicalization": {
+      "oracleTaskFamily": {
+        "enabled": true,
+        "keepLatestDate": true,
+        "markOlderAsDoneDuplicate": true,
+        "families": ["ORACLE-01", "ORACLE-02", "ORACLE-03"]
+      }
+    },
+    "labeling": {
+      "ensureRalphLoopTag": {
+        "enabled": true,
+        "tag": "ralph-loop"
+      }
+    },
+    "routing": {
+      "maxActive": 5,
+      "projectAssignee": {
+        "ADP": "Builder",
+        "ACP": "Ops",
+        "AOI-Core": "Oracle",
+        "RalphLoop": "Memory",
+        "ACP Dispatch": "Memory",
+        "ops": "Ops"
+      }
+    }
+  },
+  "reporting": {
+    "reportDir": "ops/reports/task_manager"
+  }
+}

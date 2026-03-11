@@ -1,0 +1,11 @@
+# Secrets / local vault
+/the-alpha-oracle/vault/*.env
+/the-alpha-oracle/vault/*.txt
+/the-alpha-oracle/vault/
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc

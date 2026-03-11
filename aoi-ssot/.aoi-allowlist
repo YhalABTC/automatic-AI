@@ -1,0 +1,9 @@
+README.md
+context/
+aoi-core/
+scripts/
+strategy/
+WORKFLOW_AUTO.md
+CURRENT_STATE.md
+.aoi-allowlist
+.gitignore

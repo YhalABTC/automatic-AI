@@ -1,0 +1,14 @@
+# AOI Guard allowlist (tightened)
+
+.aoi-allowlist
+.github/
+
+README.md
+docs/
+skills/
+
+# AOI security gate (CI + local)
+.gitignore
+scripts/
+aoi-core/
+aoi_core/
