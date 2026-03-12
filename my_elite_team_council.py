@@ -1,8 +1,27 @@
 import os
+import subprocess
 import time
 import json
 import concurrent.futures
 from typing import List, Dict, Any, Optional
+
+
+# --- 에이전트 상태(컨텍스트) 유지 로직 ---
+AGENT_STATE_DIR = "memory/agent_states"
+os.makedirs(AGENT_STATE_DIR, exist_ok=True)
+
+def save_agent_state(agent_id: str, state: dict):
+    state_file = os.path.join(AGENT_STATE_DIR, f"{agent_id}.json")
+    with open(state_file, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=4)
+
+def load_agent_state(agent_id: str) -> dict:
+    state_file = os.path.join(AGENT_STATE_DIR, f"{agent_id}.json")
+    if os.path.exists(state_file):
+        with open(state_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+# ----------------------------------------
 
 # --- [집사장 세바스찬] AOI PRO 위원회 로스터 (15인) ---
 ROSTER = [
@@ -53,27 +72,79 @@ def get_role_prompt(role_id: str, topic: str, context: str = "") -> str:
         base += f"\n\n[참고 컨텍스트]\n{context}"
     return base
 
+
+def delegate_to_servant(role_label: str, prompt: str) -> str:
+    """openclaw agent CLI를 호출하여 실제 하인 세션을 스폰하고 결과를 반환"""
+    import subprocess
+    import uuid
+    import time
+    print(f"    [Servant Call] {role_label}님이 OpenClaw 하인 세션을 소집하여 실무를 지시 중입니다...")
+    
+    # 하인 세션 ID 생성 (디버깅 용이하도록 라벨 포함)
+    role_name = role_label.split()[-1].lower() if " " in role_label else "agent"
+    session_id = f"servant_{role_name}_{uuid.uuid4().hex[:4]}"
+    
+    # 프롬프트에 하인의 역할과 강제 출력 포맷 지정
+    system_instruction = (
+        f"당신은 {role_label}를 보좌하는 유능한 하인(서브 에이전트)입니다. "
+        "주인님의 지시를 받아 철저하게 분석하고 논리적인 글을 작성하십시오. "
+        "대화형 응답(예: 알겠습니다 등)을 생략하고 오직 결과물만 출력하세요. "
+        "마지막 줄에는 반드시 [APPROVE], [HOLD], [CONDITIONAL] 중 하나를 판결로 명시하십시오.\\n"
+        f"--- 지시사항 ---\\n{prompt}"
+    )
+    
+    try:
+        # Rate Limit 우회를 위해 에이전트 스폰 간 약간의 딜레이
+        time.sleep(2.0)
+        result = subprocess.run(
+            ["openclaw", "agent", "--session-id", session_id, "-m", system_instruction],
+            capture_output=True,
+            text=True,
+            timeout=180
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            return f"[실패: {result.stderr.strip()}]"
+    except Exception as e:
+        return f"[오류: 하인 세션 스폰 실패 - {str(e)}]"
+
 def invoke_agent_pass(agent: Dict[str, Any], topic: str, context: str, pass_name: str, use_ai: bool) -> Dict[str, Any]:
     agent_id = agent['id']
     label = agent['label']
     
+    # 에이전트의 이전 기억(상태) 로드
+    agent_state = load_agent_state(agent_id)
+    past_memory = agent_state.get('memory', '이전 기억이 없습니다. 처음으로 발언합니다.')
+    
     # Pass별 프롬프트 구성
     if pass_name == "Initial":
-        prompt = get_role_prompt(agent_id, topic)
+        prompt = get_role_prompt(agent_id, topic) + f"\n\n[당신의 지난 기억(Memory)]\n{past_memory}"
     elif pass_name == "Critique":
-        prompt = f"당신은 {label}입니다. 다음 동료들의 의견을 비판적으로 검토하고 허점을 지적하세요.\n{context}"
+        prompt = f"당신은 {label}입니다. 다음 동료들의 의견을 비판적으로 검토하고 허점을 지적하세요.\n{context}\n\n[당신의 지난 기억(Memory)]\n{past_memory}"
     else: # Final
-        prompt = f"당신은 {label}입니다. 받은 비판들을 수렴하여 최종 수정안과 결론(Approve/Conditional/Hold)을 내리세요.\n{context}"
+        prompt = f"당신은 {label}입니다. 받은 비판들을 수렴하여 최종 수정안과 결론(Approve/Conditional/Hold)을 내리세요.\n{context}\n\n[당신의 지난 기억(Memory)]\n{past_memory}"
 
     if use_ai:
-        # Rate Limit 방지를 위한 강제 지연 (2초)
-        time.sleep(2.0) 
-        opinion = f"[{agent_id.upper()}/{pass_name}] (AI 분석 완료) {prompt[:50]}..."
-        recommendation = "Conditional" 
+        # 하인 세션을 호출하여 실제 LLM 답변을 받아옴
+        servant_response = delegate_to_servant(label, prompt)
+        
+        # 하인 세션의 답변을 파싱하여 opinion과 recommendation 추출 (간이 파싱)
+        opinion = f"[{agent_id.upper()}/{pass_name}] (하인 보고) {servant_response}"
+        
+        # 간단한 키워드 매칭으로 판결 추출
+        upper_resp = servant_response.upper()
+        if "APPROVE" in upper_resp: recommendation = "Approve"
+        elif "HOLD" in upper_resp: recommendation = "Hold"
+        else: recommendation = "Conditional"
     else:
         time.sleep(0.1)
-        opinion = f"[{agent_id.upper()}/{pass_name}] (Stub) {agent['role']} 처리 중."
+        opinion = f"[{agent_id.upper()}/{pass_name}] (Stub: 이전 기억 유지 중) {agent['role']} 처리 중."
         recommendation = "Approve"
+
+    # 발언을 마친 후 현재 의견을 기억(상태)으로 저장하여 다음번 소집 때 참고
+    agent_state['memory'] = opinion
+    save_agent_state(agent_id, agent_state)
 
     return {"id": agent_id, "agent": label, "opinion": opinion, "recommendation": recommendation, "weight": agent.get("weight", 1.0)}
 
